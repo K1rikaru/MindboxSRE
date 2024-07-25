@@ -1,0 +1,72 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web-application  # Название нашего деплоймента
+spec:
+  replicas: 4  # Количество реплик для обеспечения пиковой нагрузки
+  selector:
+    matchLabels:
+      app: web-application  # Метка для выбора подов
+  template:
+    metadata:
+      labels:
+        app: web-application  # Метка для подов
+    spec:
+      affinity:
+        podAntiAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+            - labelSelector:
+                matchExpressions:
+                  - key: app
+                    operator: In
+                    values:
+                      - web-application  # Определяем, что поды с этой меткой должны быть размещены на разных нодах
+              topologyKey: "kubernetes.io/hostname"  # Используем hostname для распределения подов по нодам
+      containers:
+      - name: web-application  # Название контейнера
+        image: my-web-app:latest  # Образ контейнера
+        resources:
+          requests:
+            memory: "128Mi"  # Запрос на память
+            cpu: "0.1"  # Запрос на CPU
+          limits:
+            memory: "256Mi"  # Лимит на память
+            cpu: "1"  # Лимит на CPU 
+        ports:
+        - containerPort: 80  # Порт, на котором работает приложение
+        readinessProbe:
+          httpGet:
+            path: /  # Путь для проверки готовности
+            port: 80  # Порт для проверки готовности
+          initialDelaySeconds: 10  # Задержка перед первой проверкой готовности (учитываем время инициализации)
+          periodSeconds: 5  # Периодичность проверки готовности
+        livenessProbe:
+          httpGet:
+            path: /  # Путь для проверки жизнеспособности
+            port: 80  # Порт для проверки жизнеспособности
+          initialDelaySeconds: 10  # Задержка перед первой проверкой жизнеспособности (учитываем время инициализации)
+          periodSeconds: 5  # Периодичность проверки жизнеспособности
+        lifecycle:
+          postStart:
+            exec:
+              command: ["/bin/sh", "-c", "sleep 10"]  # Команда для задержки старта контейнера, чтобы он успел инициализироваться
+
+---
+apiVersion: autoscaling/v2  # Используем версию v2 для HPA
+kind: HorizontalPodAutoscaler
+metadata:
+  name: web-application-hpa  # Название HPA
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: web-application  # Указываем, что скейлер будет управлять нашим деплойментом
+  minReplicas: 2  # Минимальное количество реплик
+  maxReplicas: 6  # Максимальное количество реплик
+  metrics:
+  - type: Resource
+    resource:
+      name: cpu  # Указываем метрику CPU для скейлинга
+      target:
+        type: Utilization
+        averageUtilization: 50  # Целевое использование CPU в процентах (50%)
